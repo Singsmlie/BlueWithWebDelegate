@@ -34,6 +34,7 @@
     [iNav release];
     [self.window makeKeyAndVisible];
     NSLog(@"thi is a git commit test!");
+    NSLog(@"this is one commit by kevin!");
     return YES;
 }
 
