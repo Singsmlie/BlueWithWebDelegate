@@ -1,0 +1,382 @@
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+        <style>
+            body {
+                font-family: sans-serif;
+                padding: 5px 10px;
+                margin: 0 !important;
+                min-height: 200px;
+                -webkit-tap-highlight-color: rgba(0, 0, 0, 0); /* prevent default highlight style */
+            }
+            .ios-upload-image, 
+            img[src^=webkit-fake-url], 
+            img[src^=file] {
+                max-width: 300px;
+            }
+            .portrait .ios-upload-image, 
+            .portrait img[src^=webkit-fake-url], 
+            .portrait img[src^=file] {
+                max-width: 300px;
+            }
+            .landscape .ios-upload-image,
+            .landscape img[src^=webkit-fake-url],
+            .landscape img[src^=file] {
+                max-width: 460px !important;
+            }
+            @media screen and (orientation: landscape) {
+                max-width: 460px;
+            }
+        </style>
+        <script>
+            var editor, timer, lastRange;
+            var images = {}, imageClassName = 'ios-upload-image'
+            var stopMonitoringDomChanged = false;
+
+            var originOffsetTop = 0;
+            document.addEventListener('scroll', function (e) {
+                fire('DOMScrollDidEnd');
+            });
+            
+            document.addEventListener('DOMContentLoaded', function () {
+                editor = document.getElementById('QMEditor');
+                editor.blur();
+
+                fire('DOMContentLoaded');
+  
+                var target;
+  
+                editor.addEventListener('DOMSubtreeModified', function () {
+                    clearTimeout(timer);
+                    if (stopMonitoringDomChanged) return;
+                    textChangeOffset();
+                    timer = setTimeout(function () {
+                        fire('DOMSubtreeModified');
+                    }, 50);
+                });
+
+                editor.addEventListener('focus', function (e) {
+                    lastRange && textChangeOffset(lastRange);
+                    restoreLastRange();
+                });
+
+                editor.addEventListener('blur', function (e) {
+                    BlurFromJS();
+                });
+
+                editor.addEventListener('keyup', function(e) {
+                    fire('KeyUpFromJS');
+                });
+
+                editor.addEventListener('keydown', function(e) {
+                    fire('KeyDownFromJS');
+                });
+
+                editor.addEventListener('touchend', function(e) {
+                    document.getElementById("RectHeight").innerHTML = e.changedTouches[0].clientY;
+                    fire('TouchEndFromJS');
+                });
+
+                editor.addEventListener('touchstart', function (e) {
+                    fire('TouchStartFromJS');
+                });
+
+                editor.addEventListener('paste', function (e) {
+                    fire('PasteFromJS');
+                });
+            });
+            
+            function toggleLandscape(isLandscape) {
+                editor.setAttribute('class', isLandscape ? 'landscape' : 'portrait')
+            }
+            
+            function BlurFromJS() {
+                saveLastRange();
+                textChangeOffset();
+                fire('BlurFromJS');
+            }
+            
+            function FocusFromJS() {
+                fire('FocusFromJS');
+            }
+  
+            function toArray(nodelist) {
+                return [].slice.call(nodelist);
+            }
+  
+            function log() {
+                fire("jslog-" + [].slice.call(arguments).join(''));
+//                console.warn.apply(console, arguments);
+            }
+  
+            function getHtml() {
+                return editor.innerHTML;
+            }
+  
+            function setHtml(html) {
+                editor.innerHTML = html;
+            }
+  
+            function getRectOffsetTop() {
+                return document.getElementById("RectHeight").innerHTML;
+            }
+            
+            function isFocus() {
+                return document.activeElement === editor;
+            }
+            
+            function logRect(rect) {
+                if (rect) {
+                    console.log("top: %d\nleft: %d\nright: %d\nbottom: %d\nwidth: %d\nheight: %d", rect.top, rect.left, rect.right, rect.bottom, rect.width, rect.height);
+                } else {
+                    console.error("undefined rect");
+                }
+            }
+            
+            var changeByAutoAdd = false;
+            var lastRect;
+            
+            function textChangeOffset(latestRange) {
+                var offsetTop = 0;
+                try {
+                    var sel = window.getSelection();
+                    if (sel.rangeCount || latestRange) {
+                        range = latestRange || sel.getRangeAt(0).cloneRange();
+                        var rects = range.getClientRects();
+                        range.collapse(true);
+                        var rect;
+                        if (rects.length) {
+                            rect = rects[0];
+                        } else {
+                            if (sel.focusNode.childNodes.length > 0) {
+                                var cursorNode = sel.anchorNode.childNodes[sel.anchorOffset];
+
+                                if (cursorNode.nodeName.toUpperCase() == 'BR') {
+                                    if (stopMonitoringDomChanged) {
+                                        rect = lastRect;
+                                        stopMonitoringDomChanged = false;
+                                    } else {
+                                        stopMonitoringDomChanged = true;
+                                        var prevRange = range.cloneRange();
+                                        range.insertNode(document.createTextNode('-'));
+                                        sel.removeAllRanges();
+                                        sel.addRange(range);
+                                        lastRect = sel.getRangeAt(0).getClientRects()[0];
+                                        range.deleteContents();
+                                        sel.removeAllRanges();
+                                        sel.addRange(prevRange);
+                                        textChangeOffset();
+                                        return;
+                                    }
+                                    
+                                } else {
+                                    rect = cursorNode.getBoundingClientRect()
+                                }
+                            } else {
+                                rect = sel.focusNode.getBoundingClientRect();
+                            }
+                        }
+                        if (rect)
+                            offsetTop = rect.top + rect.height / 2;
+                    }
+
+                    var wieldNumber = Math.pow(2, 31);
+                    
+                    // 妯珫灞忓垏鎹㈢殑鏃跺�锛屽垵濮嬪寲鐨剋ebview浼氬鎬湴鎶�document.body.scrollTop 缃负 -2^31
+                    if (document.body.scrollTop == -wieldNumber) {
+                        offsetTop -= document.body.scrollTop;
+                        document.body.scrollTop = 0;
+                    }
+                    
+                    // 瀹炰綋鏈哄櫒涓婏紝鍒犻櫎澶т簬鍙鍖哄煙鐨勫浘鐗囦細瀵艰嚧document.body.scrollTop 缃负 2^31 - 1
+                    if (document.body.scrollTop == wieldNumber - 1) {
+                        offsetTop += document.body.scrollTop;
+                        // TODO: 搴旇鎬庝箞瑙ｅ喅锛熻繖鏃跺�鏄剧劧宸茬粡鍙栦笉鍒颁箣鍓嶇殑scrollTop浜嗭紝鍙兘鎷垮埌鍏夋爣鍋忕Щ閲�                        //                    document.body.scrollTop = 0;
+                        //                    fire('DOMContentEmpty');
+                    }
+                    
+                    document.getElementById('RectHeight').innerHTML = offsetTop;
+
+                } catch (e) {
+                    log(e.toString());
+                }
+//                return offsetTop;
+            }
+            function gethistoryRectTop () {
+			    return getRectOffsetTop();
+			}
+			function getcurrentiRectTop(){
+			    return  document.body.scrollTop;
+			}
+			
+            function getRectTop() {
+                return getRectOffsetTop() + document.body.scrollTop;
+            }
+  
+            function getRectLeft() {
+                return document.body.offsetLeft;
+            }
+  
+            function fire(event) {
+                //console.log('Fire: %s', event);
+                window.location.href = 'qmeditor://' + event;
+            }
+  
+            function firstResponder() {
+                editor.focus();
+                restoreLastRange();
+                return true;
+            }
+  
+            function disableEditing() {
+                editor.setAttribute('contenteditable', false);
+            }
+  
+            function enableEditing() {
+                editor.setAttribute('contenteditable', true);
+            }
+  
+            function setTextHeight() {
+                editor.style.height = height + 'px';
+            }
+            function getBodyHeight() {
+                return document.body.scrollHeight;
+            }
+            function getTextHeight() {
+                return editor.scrollHeight;
+            }
+            function getTextWidth() {
+                return editor.scrollWidth;
+            }
+            function printHtml() {
+                return document.body.outerHTML;
+            }
+
+            function saveLastRange() {
+                lastRange = window.getSelection().getRangeAt(0);
+            }
+
+            function restoreLastRange() {
+                if (!lastRange) return;
+                var sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(lastRange);
+            }
+
+            function insertNodeAtCurrentRange(node, doNotCollapse) {
+                var sel = window.getSelection();
+                var range = sel.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(node);
+                sel.removeAllRanges();
+                range = range.cloneRange();
+                range.selectNode(node);
+                !doNotCollapse && range.collapse(false);
+                sel.addRange(range);
+                return range;
+            }
+            
+            
+            function getWebKitFakeUrls() {
+                var urls = {};
+                var images = document.querySelectorAll('img[src^=webkit-fake-url]');
+                for (var i=0, l=images.length; i<l; i++) {
+                    var id = images[i].src.replace(/^webkit-fake-url:\/\/([^/]+)\/.*$/, "$1");
+                    images[i].setAttribute('id', id);
+                    urls[id] = id;
+                }
+                insertNodeAtCurrentRange(document.createElement('br'));
+                return JSON.stringify(urls);
+            }
+            
+            function changeWebKitFakeUrls(imagesJson) {
+                for (var id in imagesJson) {
+                    var img = document.getElementById(id),
+                        src = imagesJson[id].url;
+                    if (!img) continue;
+                    img.setAttribute('src', src);
+                    img.setAttribute('class', imageClassName);
+                    images[src] = images[src] ? images[src]++ : 1;
+                }
+                setTimeout(function() {
+                    textChangeOffset();
+                    fire('DOMSubtreeModified');
+                }, 50)
+            }
+
+            function insertImageAtCurrentRange(src, width, height) {
+                editor.focus();
+                restoreLastRange();
+                var img = document.createElement('img');
+                img.setAttribute('src', src);
+                img.className = imageClassName;
+                img.onload = function() {
+                    textChangeOffset();
+                    fire('JSImageOnLoad');
+                }
+                images[src] = images[src] ? images[src]++ : 1;
+                textChangeOffset()
+                if (getRectOffsetTop() != 15) {
+                    insertNodeAtCurrentRange(document.createElement('br'));
+                }
+                insertNodeAtCurrentRange(img);
+                insertNodeAtCurrentRange(document.createElement('br'));
+                saveLastRange();
+            }
+
+            var uniqueSrc = function(arr) {
+                var a = [], l = arr.length;
+                for(var i=0; i<l; i++) {
+                    for(var j=i+1; j<l; j++)
+                    if (arr[i].src === arr[j].src) j = ++i;
+                    a.push(decodeURIComponent(arr[i].src.replace(/^file:\/\//, 'file://localhost')));
+                }
+                return a;
+            };
+            
+            function getDeletedImages() {
+                var imgs = uniqueSrc(document.getElementsByClassName(imageClassName));
+                var delImgs = [];
+                for (var img in images) {
+                    if (imgs.indexOf(img) == -1) {
+                        delImgs.push(img.replace('file://localhost', ''));
+                        delete images[img];
+                    }
+                }
+                return JSON.stringify(delImgs);
+            }
+            
+        </script>
+        <script>
+            function startBlueTooth(){
+                
+                fire('StartBlueTooth');
+            }
+            function createAlert(cmd)
+            {
+                //var head1 = document.createElement('h1');
+                //head1.innerHTML=cmd;
+                //document.body.appendChild(head1);
+                alert(cmd);
+            }
+            function setStartBlueEnable(cmd)
+            {
+        
+                var bt = document.getElementById('startBlueTooth');
+                bt.style.display = (cmd == 'no')?"none":"block";
+                
+                
+            }
+        </script>
+    </head>
+    <body>
+        <div id="RectHeight" hidden="true"></div>
+        <!--button onclick="insertImageAtCurrentRange('http://www.baidu.com/img/baidu_sylogo1.gif', 270, 129)">AddImage</button-->
+        
+        <div id="QMEditor" contenteditable="false">Please Connect The BlueTooth</div>
+        
+        
+        <button onclick="startBlueTooth();" id="startBlueTooth">Start BlueTooth</button>
+    </body>
+</html>
