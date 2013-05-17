@@ -33,6 +33,7 @@
     self.window.rootViewController = iNav;
     [iNav release];
     [self.window makeKeyAndVisible];
+    NSLog(@"thi is a git commit test!");
     return YES;
 }
 
